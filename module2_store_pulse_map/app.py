@@ -13,15 +13,17 @@ import streamlit as st
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
-from config import REVIEWS_CSV, APP_NAME
+from config import REVIEWS_CSV, BRAND_NAME as APP_NAME
 
 
 def load_data():
     if not os.path.exists(REVIEWS_CSV):
         return None
-    df = pd.read_csv(REVIEWS_CSV, parse_dates=["date"])
+    df = pd.read_csv(REVIEWS_CSV)
     df["stars"] = pd.to_numeric(df["stars"], errors="coerce")
-    return df.dropna(subset=["stars"])
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    return df
 
 
 def show():
@@ -41,13 +43,16 @@ def show():
     versions   = df["version"].nunique() if "version" in df.columns else "-"
 
     # Recent trend (last 30 days vs prior 30 days)
-    if "date" in df.columns and not df["date"].isna().all():
-        latest = df["date"].max()
-        recent = df[df["date"] >= latest - pd.Timedelta(days=30)]["stars"].mean()
-        prior  = df[(df["date"] >= latest - pd.Timedelta(days=60)) &
-                    (df["date"] <  latest - pd.Timedelta(days=30))]["stars"].mean()
-        trend  = round(recent - prior, 2) if not np.isnan(prior) else 0
-    else:
+    try:
+        if "date" in df.columns and df["date"].notna().any():
+            latest = df["date"].max()
+            recent = df[df["date"] >= latest - pd.Timedelta(days=30)]["stars"].mean()
+            prior  = df[(df["date"] >= latest - pd.Timedelta(days=60)) &
+                        (df["date"] <  latest - pd.Timedelta(days=30))]["stars"].mean()
+            trend  = round(recent - prior, 2) if (not np.isnan(prior) and not np.isnan(recent)) else 0
+        else:
+            trend = 0
+    except Exception:
         trend = 0
 
     c1,c2,c3,c4,c5,c6 = st.columns(6)

@@ -40,11 +40,13 @@ def build_context():
     else:
         worst_v = best_v = "N/A"
 
-    low_reviews = df[df["stars"]<=2]["text"].dropna().sample(min(10,len(df[df["stars"]<=2])),random_state=42).tolist()
-    low_sample  = "\n".join([f"- {r[:200]}" for r in low_reviews])
+    low_df = df[df["stars"]<=2]["text"].dropna()
+    low_reviews = low_df.sample(min(10,len(low_df)),random_state=42).tolist() if len(low_df)>0 else []
+    low_sample  = "\n".join([f"- {r[:200]}" for r in low_reviews]) if low_reviews else "No low-rated reviews found."
 
-    high_reviews = df[df["stars"]>=4]["text"].dropna().sample(min(5,len(df[df["stars"]>=4])),random_state=42).tolist()
-    high_sample  = "\n".join([f"- {r[:150]}" for r in high_reviews])
+    high_df = df[df["stars"]>=4]["text"].dropna()
+    high_reviews = high_df.sample(min(5,len(high_df)),random_state=42).tolist() if len(high_df)>0 else []
+    high_sample  = "\n".join([f"- {r[:150]}" for r in high_reviews]) if high_reviews else "No high-rated reviews found."
 
     context = f"""APP STORE REVIEW DATA - {APP_NAME}
 ====================================

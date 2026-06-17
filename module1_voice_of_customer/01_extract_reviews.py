@@ -1,5 +1,5 @@
 """
-Smart Data Extractor — automatically chooses the right data source:
+Smart Data Extractor - automatically chooses the right data source:
 
   1. APP_STORE_ID set in config.py → scrapes Apple App Store (iTunes RSS)
   2. APP_STORE_ID empty           → scrapes Amazon + Reddit automatically
@@ -49,7 +49,7 @@ def fetch_url(url, extra_headers=None, timeout=20):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SOURCE 1 — Apple App Store (iTunes RSS)
+# SOURCE 1 - Apple App Store (iTunes RSS)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def scrape_app_store():
@@ -82,10 +82,10 @@ def scrape_app_store():
             print(f"   Page {page}: {len(entries)} reviews (total: {len(reviews)})")
             time.sleep(0.5)
         except urllib.error.HTTPError as ex:
-            print(f"   Page {page}: HTTP {ex.code} — stopping.")
+            print(f"   Page {page}: HTTP {ex.code} - stopping.")
             break
         except Exception as ex:
-            print(f"   Page {page}: {ex} — stopping.")
+            print(f"   Page {page}: {ex} - stopping.")
             break
 
     print(f"   ✅ App Store: {len(reviews)} reviews")
@@ -93,7 +93,7 @@ def scrape_app_store():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SOURCE 2 — Amazon Product Reviews
+# SOURCE 2 - Amazon Product Reviews
 # ══════════════════════════════════════════════════════════════════════════════
 
 def search_amazon_asins():
@@ -177,7 +177,7 @@ def scrape_amazon():
     asins = AMAZON_ASINS if AMAZON_ASINS else search_amazon_asins()
 
     if not asins:
-        print("   No ASINs found — skipping Amazon.")
+        print("   No ASINs found - skipping Amazon.")
         return []
 
     all_reviews = []
@@ -191,7 +191,7 @@ def scrape_amazon():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SOURCE 3 — Reddit Posts
+# SOURCE 3 - Reddit Posts
 # ══════════════════════════════════════════════════════════════════════════════
 
 def scrape_reddit():
@@ -218,7 +218,7 @@ def scrape_reddit():
 
                 all_posts.append({
                     "review_id":  d.get("id",""),
-                    "stars":      "",    # Reddit has no star rating — AI infers sentiment
+                    "stars":      "",    # Reddit has no star rating - AI infers sentiment
                     "date":       "",
                     "title":      title[:200],
                     "text":       combined[:1000],
@@ -256,7 +256,7 @@ def save_reviews(reviews):
 
 def main():
     print("=" * 55)
-    print(f"  Smart Data Extractor — {BRAND_NAME}")
+    print(f"  Smart Data Extractor - {BRAND_NAME}")
     print("=" * 55)
 
     all_reviews = []
@@ -285,7 +285,7 @@ def main():
         sources[src] = sources.get(src, 0) + 1
 
     print("\n" + "=" * 55)
-    print(f"  ✅ Done — {len(all_reviews)} total reviews collected")
+    print(f"  ✅ Done - {len(all_reviews)} total reviews collected")
     for src, count in sources.items():
         print(f"     {src}: {count}")
     print("  Run: streamlit run main_app.py")

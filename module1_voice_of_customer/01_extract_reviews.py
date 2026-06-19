@@ -33,14 +33,15 @@ FIELDNAMES = [
 ]
 
 # US states for nationwide search coverage
-US_STATES = [
-    "California", "Texas", "Florida", "New York", "Pennsylvania",
-    "Illinois", "Ohio", "Georgia", "North Carolina", "Michigan",
-    "New Jersey", "Virginia", "Washington", "Arizona", "Massachusetts",
-    "Tennessee", "Indiana", "Missouri", "Maryland", "Wisconsin",
-    "Colorado", "Minnesota", "South Carolina", "Alabama", "Louisiana",
-    "Nevada", "Oregon", "Connecticut",
-]
+US_STATE_MAP = {
+    "California":"CA","Texas":"TX","Florida":"FL","New York":"NY","Pennsylvania":"PA",
+    "Illinois":"IL","Ohio":"OH","Georgia":"GA","North Carolina":"NC","Michigan":"MI",
+    "New Jersey":"NJ","Virginia":"VA","Washington":"WA","Arizona":"AZ","Massachusetts":"MA",
+    "Tennessee":"TN","Indiana":"IN","Missouri":"MO","Maryland":"MD","Wisconsin":"WI",
+    "Colorado":"CO","Minnesota":"MN","South Carolina":"SC","Alabama":"AL","Louisiana":"LA",
+    "Nevada":"NV","Oregon":"OR","Connecticut":"CT",
+}
+US_STATES = list(US_STATE_MAP.keys())
 
 
 def fetch_url(url, timeout=20):
@@ -69,36 +70,106 @@ def parse_relative_date(text):
     return now.strftime("%Y-%m-%d")
 
 
-def parse_address(raw_address):
+def parse_address(raw_address, search_term=""):
+    """
+    Extract city and state from address string.
+    Falls back to the search term's state name if the address
+    doesn't contain a clean state code (common with mall/outlet addresses).
+    """
     city, state = "", ""
-    if not raw_address:
-        return city, state
-    parts = [p.strip() for p in raw_address.split(",")]
-    if len(parts) >= 3:
-        city = parts[-3]
-        state_zip = parts[-2].strip()
-        m = re.match(r'^([A-Z]{2})', state_zip)
-        if m:
-            state = m.group(1)
-    elif len(parts) == 2:
-        city = parts[0]
+    if raw_address:
+        parts = [p.strip() for p in raw_address.split(",") if p.strip()]
+        for i, part in enumerate(parts):
+            m = re.search(r'\b([A-Z]{2})\b\s*\d{0,5}$', part)
+            if m and m.group(1) not in ("US", "ST", "RD", "DR", "BLVD", "AVE"):
+                state = m.group(1)
+                if i > 0:
+                    city = parts[i-1]
+                break
+
+    # Fallback: use the state we searched for (most reliable for mall addresses)
+    if not state and search_term:
+        for st_name, st_code in US_STATE_MAP.items():
+            if st_name.lower() in search_term.lower():
+                state = st_code
+                break
+
     return city.strip(), state.strip()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SOURCE 1 - Apple App Store (always tried if APP_STORE_ID is set)
+# SOURCE 1 - Apple App Store (auto-discovers app ID if not set)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def scrape_app_store():
-    if not APP_STORE_ID.strip():
-        print("\n📱 No APP_STORE_ID set - skipping App Store.")
-        return []
+def auto_find_app_id(brand_name):
+    """
+    Search iTunes for an app matching the brand name.
+    Returns (app_id, app_title) or (None, None) if no good match found.
+    Free, no API key needed.
+    """
+    print(f"\n🔎 Auto-searching App Store for: '{brand_name}'...")
+    try:
+        query = urllib.parse.quote_plus(brand_name)
+        url = f"https://itunes.apple.com/search?term={query}&entity=software&country={APP_COUNTRY}&limit=10"
+        data = json.loads(fetch_url(url))
+        results = data.get("results", [])
 
-    print(f"\n📱 Scraping Apple App Store (ID: {APP_STORE_ID})...")
+        if not results:
+            print(f"   No App Store apps found for '{brand_name}'.")
+            return None, None
+
+        # Find best match: app title contains the brand name, has decent rating count
+        brand_lower = brand_name.lower()
+        candidates = []
+        for app in results:
+            title = app.get("trackName", "")
+            rating_count = app.get("userRatingCount", 0)
+            if brand_lower in title.lower():
+                candidates.append((app.get("trackId"), title, rating_count))
+
+        if not candidates:
+            # Fall back to top result even if name doesn't match exactly
+            top = results[0]
+            app_id = str(top.get("trackId", ""))
+            title  = top.get("trackName", "")
+            ratings = top.get("userRatingCount", 0)
+            print(f"   No exact name match. Closest result: '{title}' ({ratings} ratings)")
+            if ratings < 50:
+                print(f"   Too few ratings to be useful - skipping App Store.")
+                return None, None
+            return app_id, title
+
+        # Pick candidate with most ratings (most likely the real official app)
+        candidates.sort(key=lambda x: -x[2])
+        app_id, title, ratings = candidates[0]
+
+        print(f"   Found: '{title}' (ID: {app_id}, {ratings} ratings)")
+
+        if ratings < 20:
+            print(f"   Too few ratings ({ratings}) to be useful - skipping App Store.")
+            return None, None
+
+        return str(app_id), title
+
+    except Exception as ex:
+        print(f"   Auto-search failed: {ex}")
+        return None, None
+
+
+def scrape_app_store():
+    app_id = APP_STORE_ID.strip()
+
+    if not app_id:
+        app_id, found_title = auto_find_app_id(BRAND_NAME)
+        if not app_id:
+            print("   Skipping App Store - no usable app found.")
+            return []
+
+    print(f"\n📱 Scraping Apple App Store (ID: {app_id})...")
     reviews = []
     for page in range(1, MAX_REVIEW_PAGES + 1):
         url = (f"https://itunes.apple.com/{APP_COUNTRY}/rss/customerreviews"
-               f"/page={page}/id={APP_STORE_ID}/sortby=mostrecent/json")
+               f"/page={page}/id={app_id}/sortby=mostrecent/json")
         try:
             data    = json.loads(fetch_url(url))
             entries = data.get("feed", {}).get("entry", [])
@@ -132,7 +203,7 @@ def scrape_app_store():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SOURCE 2 - Google Maps via SerpAPI (always tried, nationwide)
+# SOURCE 2 - Google Maps via SerpAPI
 # ══════════════════════════════════════════════════════════════════════════════
 
 def serpapi_get(params):
@@ -141,9 +212,11 @@ def serpapi_get(params):
     return json.loads(fetch_url(url))
 
 
-def scrape_location_reviews(keyword, max_locations=3, max_pages=2):
-    """Search Google Maps for keyword, scrape reviews with full location metadata.
-    Returns (reviews_list, api_calls_made)."""
+def scrape_location_reviews(keyword, max_locations=1, max_pages=1):
+    """
+    Search Google Maps for keyword, scrape reviews with full location metadata.
+    Returns (reviews_list, api_calls_made).
+    """
     reviews = []
     calls = 0
     try:
@@ -166,7 +239,7 @@ def scrape_location_reviews(keyword, max_locations=3, max_pages=2):
             google_rating = place.get("rating", "")
             total_reviews = place.get("reviews", "")
 
-            city, state = parse_address(raw_address)
+            city, state = parse_address(raw_address, search_term=keyword)
 
             if not data_id:
                 continue
@@ -238,7 +311,6 @@ def scrape_serpapi():
     all_reviews = []
     seen_ids    = set()
 
-    # Combine brand keywords with state names for nationwide coverage
     search_terms = []
     for kw in KEYWORDS:
         for state in US_STATES:
@@ -246,10 +318,10 @@ def scrape_serpapi():
 
     print(f"   Searching state-targeted queries (capped for API budget)...")
 
-    queries_run = 0
-    max_queries = 12     # 12 searches × 1 call = 12 calls
+    queries_run    = 0
+    max_queries    = 12
     api_calls_used = 0
-    max_api_calls  = 90  # stay safely under 100/month free tier
+    max_api_calls  = 90
 
     for term in search_terms:
         if queries_run >= max_queries:
@@ -261,7 +333,7 @@ def scrape_serpapi():
             break
 
         reviews, calls_made = scrape_location_reviews(term, max_locations=1, max_pages=1)
-        queries_run += 1
+        queries_run    += 1
         api_calls_used += calls_made
 
         for r in reviews:
@@ -281,7 +353,7 @@ def scrape_serpapi():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MAIN - combines both sources
+# MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
 def save_reviews(reviews):
@@ -301,11 +373,9 @@ def main():
 
     all_reviews = []
 
-    # Always try App Store first
     app_reviews = scrape_app_store()
     all_reviews.extend(app_reviews)
 
-    # Always try Google Maps (nationwide)
     maps_reviews = scrape_serpapi()
     all_reviews.extend(maps_reviews)
 
